@@ -82,11 +82,12 @@ libusb-compat
 libwnck3
 linux-atm
 linux-cachyos-lts
-linux-cachyos-lts-zfs
-linux-cachyos-lts-nvidia-open
-linux-cachyos
-linux-cachyos-nvidia-open
-linux-cachyos-zfs
+# linux-cachyos-lts-zfs (removed for Mac Pro)
+# linux-cachyos-lts-nvidia-open (removed for Mac Pro)
+linux-macpro61
+linux-macpro61-headers
+# linux-cachyos-nvidia-open (removed for Mac Pro - uses amdgpu)
+# linux-cachyos-zfs (removed - using macpro61 kernel)
 linux-firmware
 linux-firmware-marvell
 lsb-release
@@ -120,7 +121,7 @@ noto-fonts-cjk
 nss-mdns
 ntfs-3g
 ntp
-nvidia-utils
+# nvidia-utils (removed for Mac Pro - uses amdgpu)
 nvme-cli
 occt
 open-iscsi

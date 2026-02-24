@@ -1,0 +1,12 @@
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Target = boot/vmlinuz-linux-macpro61
+Target = boot/initramfs-linux-macpro61.img
+
+[Action]
+Description = Syncing Mac Pro 6,1 kernel to ESP...
+When = PostTransaction
+Exec = /bin/sh -c 'if mountpoint -q /boot/efi; then cp /boot/vmlinuz-linux-macpro61 /boot/efi/ && cp /boot/initramfs-linux-macpro61.img /boot/efi/; fi'
+NeedsTargets

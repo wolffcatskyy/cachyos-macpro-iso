@@ -20,3 +20,13 @@ archiso/airootfs/etc/environment
 archiso/airootfs/etc/pacman.d/cachyos-mirrorlist
 archiso/airootfs/etc/edition-tag
 archiso/airootfs/etc/version-tag
+
+# ISO build artifacts
+build/
+out/
+local-repo/*.pkg.tar.zst
+local-repo/*.db*
+local-repo/*.files*
+*.iso
+*.sha1
+*.sha256
