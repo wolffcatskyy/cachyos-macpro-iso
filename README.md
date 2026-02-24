@@ -14,7 +14,27 @@ A custom [CachyOS](https://cachyos.org) ISO for the **Mac Pro 6,1 (Late 2013)** 
 - CachyOS performance optimizations (ananicy-cpp, optimized packages)
 - Calamares graphical installer — point and click to install
 
-## Quick Start (Build the ISO)
+## Pre-built ISO (Recommended)
+
+Download the latest pre-built ISO from [Releases](https://github.com/wolffcatskyy/cachyos-macpro-iso/releases). The ISO is split into two parts due to GitHub's 2GB file size limit.
+
+1. Download both `.part_aa` and `.part_ab` files from the latest release
+2. Reassemble the ISO:
+   - **Linux/macOS:** `cat cachyos-macpro-*.iso.part_* > cachyos-macpro.iso`
+   - **Windows (PowerShell):** `cmd /c copy /b cachyos-macpro-*.iso.part_aa+cachyos-macpro-*.iso.part_ab cachyos-macpro.iso`
+3. Verify the checksum (listed in the release notes): `sha256sum cachyos-macpro.iso`
+4. Flash to USB:
+   - **Windows:** Use [Rufus](https://rufus.ie) or [balenaEtcher](https://etcher.balena.io)
+   - **Linux/macOS:** `sudo dd if=cachyos-macpro.iso of=/dev/sdX bs=4M status=progress`
+5. Boot your Mac Pro:
+   - Plug in the USB drive
+   - **Power off** the Mac Pro (never reboot — GPU firmware only initializes on cold boot)
+   - Press the power button and **immediately hold the Option key**
+   - Select the USB drive from the boot menu
+   - Choose **"CachyOS (Mac Pro 6,1)"** from the GRUB menu
+   - The desktop will load — double-click the installer icon
+
+## Build the ISO Yourself
 
 You need a working Arch Linux or CachyOS installation to build. If your Mac Pro already runs Arch/CachyOS, you can build directly on it.
 
