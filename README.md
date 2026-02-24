@@ -93,28 +93,6 @@ Replace `/dev/sdX` with your USB drive. **Double-check the device name** — thi
 5. Choose **"CachyOS (Mac Pro 6,1)"** from the GRUB menu
 6. The desktop will load — double-click the installer icon
 
-## Already Running Arch? (No ISO Needed)
-
-If your Mac Pro already has Arch Linux installed, you don't need the ISO. You can upgrade in-place:
-
-1. Install the [linux-macpro61](https://github.com/wolffcatskyy/linux-mac) kernel package
-2. Add the CachyOS repo to `/etc/pacman.conf` (above `[core]`):
-   ```ini
-   [cachyos]
-   Server = https://mirror.cachyos.org/repo/$arch/$repo
-   ```
-3. Import the key and install CachyOS packages:
-   ```bash
-   sudo pacman-key --recv-keys 882DCFE48E2051D48E2562ABF3B607488DB35A47
-   sudo pacman-key --lsign-key 882DCFE48E2051D48E2562ABF3B607488DB35A47
-   sudo pacman -Sy cachyos-keyring cachyos-mirrorlist
-   sudo pacman -S cachyos-hooks cachyos-settings cachyos-rate-mirrors
-   sudo pacman -Syu
-   ```
-4. Poweroff and press the power button (never reboot)
-
-Your data, home directory, and everything stays intact.
-
 ## Important: Never Reboot
 
 The Mac Pro 6,1 has a quirk with Apple EFI: the GPU firmware only initializes on a **cold boot** (power off then power on). A warm reboot leaves the GPU in an uninitialized state — you get a black screen.
