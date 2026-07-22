@@ -1,5 +1,7 @@
 # CachyOS Mac Pro 6,1 Edition
 
+> **Status: Maintained** — This ISO is actively relevant for Mac Pro 6,1 users. Community testing and contributions welcome.
+
 A custom [CachyOS](https://cachyos.org) ISO for the **Mac Pro 6,1 (Late 2013)** with hardware support baked in.
 
 ## What You Get
