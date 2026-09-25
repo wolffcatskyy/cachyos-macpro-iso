@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Called after online packages, before initcpio/bootloader. Fail on missing essentials.
+set -euo pipefail
+root=${1:?missing installation root}
+[[ -d "$root/usr" && -x "$root/usr/bin/pacman" ]] || exit 1
+arch-chroot "$root" pacman -Q linux-macpro61 mesa openssh zram-generator >/dev/null
+if arch-chroot "$root" pacman -Qq | grep -Eq '^linux-cachyos($|-lts$)'; then
+  echo 'Stock CachyOS kernel installed: refusing to complete Mac Pro install' >&2
+  exit 1
+fi
+install -Dm755 /usr/local/sbin/macpro-fans-max "$root/usr/local/sbin/macpro-fans-max"
+install -Dm644 /etc/systemd/system/macpro-fans-max.service "$root/etc/systemd/system/macpro-fans-max.service"
+install -Dm644 /etc/systemd/zram-generator.conf "$root/etc/systemd/zram-generator.conf"
+install -Dm644 /etc/sysctl.d/90-macpro64.conf "$root/etc/sysctl.d/90-macpro64.conf"
+# The old ESP sync hook copied boot paths not emitted by the current PKGBUILD.
+# Do not ship it to the installed system until the kernel-install path is validated.
+arch-chroot "$root" systemctl enable macpro-fans-max.service sshd.service
+# The live Calamares bootloader config must already point at linux-macpro61.
+grep -q 'vmlinuz-linux-macpro61' /etc/calamares/modules/grubcfg.conf

@@ -1,0 +1,68 @@
+name: UNTESTED MacPro6,1 ISO candidate
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'archiso/**'
+      - 'kernel/**'
+      - 'buildiso.sh'
+      - '.github/workflows/candidate-build.yml'
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    container:
+      image: archlinux:base-devel
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure CachyOS signing key and baseline package repo
+        run: |
+          pacman-key --init
+          pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com
+          pacman-key --lsign-key F3B607488DB35A47
+          sed -i '/^\[core\]$/i[cachyos]\nServer = https://mirror.cachyos.org/repo/$arch/$repo\n' /etc/pacman.conf
+      - name: Install Arch build tools
+        run: pacman -Syu --noconfirm --needed archiso mkinitcpio-archiso squashfs-tools grub git clang llvm lld bc cpio libelf pahole python tar xz zstd linux-firmware pacman-contrib cachyos-keyring
+      - name: Create unprivileged builder
+        run: |
+          useradd -m builder
+          printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+      - name: Build Mac Pro kernel package (strict patches)
+        run: su builder -c "cd '$GITHUB_WORKSPACE/kernel/arch' && makepkg --syncdeps --noconfirm --cleanbuild"
+      - name: Build local repository
+        run: |
+          mkdir -p local-repo
+          cp kernel/arch/*.pkg.tar.zst local-repo/
+          cd local-repo
+          repo-add macpro.db.tar.gz ./*.pkg.tar.zst
+      - name: Build candidate ISO
+        run: |
+          # The repository files are copied into airootfs before mkarchiso.
+          # A nonzero build is a failed beta candidate, not a release.
+          mkdir -p archiso/airootfs/opt/macpro-repo
+          cp -a local-repo/. archiso/airootfs/opt/macpro-repo/
+          sed -i "s@file:///opt/macpro-repo@file://$GITHUB_WORKSPACE/local-repo@" archiso/pacman.conf
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          cp archiso/packages_desktop.x86_64 archiso/packages.x86_64
+          su builder -c "cd '$GITHUB_WORKSPACE' && sudo mkarchiso -v -w '$GITHUB_WORKSPACE/work' -o '$GITHUB_WORKSPACE/out/desktop' '$GITHUB_WORKSPACE/archiso'"
+          cp work/iso/arch/pkglist.x86_64.txt out/desktop/candidate.pkgs.txt
+      - name: Verify candidate metadata
+        run: |
+          test -n "$(find out/desktop -name '*.iso' -print -quit)"
+          sha256sum out/desktop/*.iso > out/desktop/SHA256SUMS
+          grep -q 'linux-macpro61' out/desktop/*.pkgs.txt
+          ! grep -Eq 'linux-cachyos-(lts|v3)' out/desktop/*.pkgs.txt
+      - name: Upload beta artifact, not a release
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UNTESTED-macpro61-ISO-candidate
+          path: |
+            out/desktop/*.iso
+            out/desktop/SHA256SUMS
+            out/desktop/*.pkgs.txt
+          retention-days: 7

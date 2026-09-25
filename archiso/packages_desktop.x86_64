@@ -81,7 +81,7 @@ libfido2
 libusb-compat
 libwnck3
 linux-atm
-linux-cachyos-lts
+# linux-cachyos-lts (not the Mac Pro kernel)
 # linux-cachyos-lts-zfs (removed for Mac Pro)
 # linux-cachyos-lts-nvidia-open (removed for Mac Pro)
 linux-macpro61
@@ -197,3 +197,4 @@ xdg-utils
 xfsprogs
 xl2tpd
 zfs-utils
+zram-generator

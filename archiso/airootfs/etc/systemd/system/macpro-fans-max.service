@@ -1,0 +1,14 @@
+[Unit]
+Description=Keep Mac Pro 6,1 fan at firmware maximum
+After=systemd-udev-settle.service
+Before=display-manager.service
+ConditionVirtualization=!container
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/macpro-fans-max
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

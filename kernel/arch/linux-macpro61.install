@@ -1,0 +1,32 @@
+# Post-install hook for Mac Pro 6,1 kernel
+# Apple EFI requires cold boot (poweroff) for GPU init — reboot leaves GPU dead
+
+post_install() {
+    # Kernel package may install /usr/lib/modules/<release>/vmlinuz, not /boot/vmlinuz-*.
+    # Do not silently copy a nonexistent boot file.
+    if mountpoint -q /boot/efi; then
+        echo "Mac Pro kernel: EFI boot synchronization is not yet validated" >&2
+    fi
+
+    # Mask reboot — Apple EFI needs cold boot for GPU initialization
+    systemctl mask reboot.target 2>/dev/null
+
+    # Install alias so 'reboot' tells user to poweroff
+    cat > /etc/profile.d/no-reboot.sh << 'ALIAS'
+alias reboot='echo "Mac Pro 6,1 requires cold boot for GPU init. Use: sudo poweroff"; sudo poweroff'
+ALIAS
+    chmod 644 /etc/profile.d/no-reboot.sh
+
+    echo '>>> Mac Pro 6,1: reboot disabled (Apple EFI needs cold boot for GPU).'
+    echo '>>> Use "sudo poweroff" then press power button.'
+}
+
+post_upgrade() {
+    post_install
+}
+
+post_remove() {
+    # Restore reboot capability
+    systemctl unmask reboot.target 2>/dev/null
+    rm -f /etc/profile.d/no-reboot.sh
+}
