@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Apply guarded MacPro6,1 online-installer changes. Candidate, untested on hardware."""
+from pathlib import Path
+import re
+import sys
+
+modules = Path('/usr/lib/calamares/modules')
+script = modules / 'pacstrap/main.py'
+conf = Path('/etc/calamares/modules/pacstrap.conf')
+netinstall = Path('/etc/calamares/modules/netinstall.yaml')
+before = Path('/etc/calamares/modules/shellprocess-before-online.conf')
+settings = Path('/usr/share/calamares/settings_online.conf')
+grubcfg = Path('/etc/calamares/modules/grubcfg.conf')
+bootloader = Path('/etc/calamares/modules/bootloader.conf')
+for path in (script, conf, netinstall, before, settings, grubcfg, bootloader):
+    if not path.is_file():
+        sys.exit(f'Missing expected Calamares file: {path}')
+repo = Path('/opt/macpro-repo')
+if not (repo / 'macpro.db').exists() or not list(repo.glob('linux-macpro61-[0-9]*.pkg.tar.zst')):
+    sys.exit('Custom kernel package/database missing from live ISO')
+data = {p: p.read_text() for p in (script, conf, netinstall, before, settings, grubcfg, bootloader)}
+s = data[script]
+pattern = r'base_packages \+= \["linux-cachyos", "linux-cachyos-headers",\s*"linux-cachyos-lts", "linux-cachyos-lts-headers"\]'
+s, n = re.subn(pattern, 'base_packages += ["linux-macpro61", "linux-macpro61-headers"]', s)
+if n != 1:
+    sys.exit('Unexpected pacstrap kernel logic; refusing install')
+data[script] = s
+s = data[netinstall]
+pattern = r'(?ms)(- name: "CachyOS kernels \(hidden\)".*?packages:\n)(.*?)(?=^- name: )'
+s, n = re.subn(pattern, r'\g<1>     - linux-macpro61\n     - linux-macpro61-headers\n', s)
+if n != 1:
+    sys.exit('Unexpected netinstall kernel group; refusing install')
+data[netinstall] = s
+s = data[conf]
+if s.count('basePackages:\n') != 1:
+    sys.exit('Unexpected pacstrap package list; refusing install')
+s = s.replace('basePackages:\n', 'basePackages:\n  - linux-macpro61\n  - linux-macpro61-headers\n  - openssh\n  - zram-generator\n', 1)
+data[conf] = s
+s = data[before]
+line = '    - command: "/etc/calamares/scripts/detect-architecture ${ROOT}/etc/pacman.conf"'
+if s.count(line) != 1:
+    sys.exit('Unexpected architecture hook; refusing install')
+s = s.replace(line, '    - command: "mkdir -p ${ROOT}/opt/macpro-repo && cp -a /opt/macpro-repo/. ${ROOT}/opt/macpro-repo/"', 1)
+data[before] = s
+s = data[settings]
+if s.count('  - initcpio\n') != 1 or s.count('  - shellprocess@enable_ufw\n') != 1:
+    sys.exit('Unexpected installer sequence; refusing install')
+s = s.replace('  - initcpio\n', '  - shellprocess@macpro-finalize\n  - initcpio\n', 1)
+s = s.replace('  - shellprocess@enable_ufw\n', '  - shellprocess@macpro-ufw\n', 1)
+anchor = 'sequence:\n'
+if s.count(anchor) != 1:
+    sys.exit('Unexpected settings format; refusing install')
+s = s.replace(anchor, '''- id:       macpro-finalize
+  module:   shellprocess
+  config:   shellprocess_macpro_finalize.conf
+
+- id:       macpro-ufw
+  module:   shellprocess
+  config:   shellprocess_macpro_ufw.conf
+
+sequence:
+''', 1)
+data[settings] = s
+s = data[grubcfg]
+if '/boot/vmlinuz-linux-cachyos' not in s:
+    sys.exit('Unexpected GRUB kernel entry; refusing install')
+data[grubcfg] = s.replace('/boot/vmlinuz-linux-cachyos', '/boot/vmlinuz-linux-macpro61')
+s = data[bootloader]
+if 'linux-cachyos' not in s:
+    sys.exit('Unexpected bootloader kernel list; refusing install')
+data[bootloader] = s.replace('linux-cachyos', 'linux-macpro61')
+# Validate complete expected structure before writing any file. Restore originals if aborted.
+for path, text in data.items():
+    backup = path.with_name(path.name + '.macpro-original')
+    if not backup.exists():
+        backup.write_bytes(path.read_bytes())
+    path.write_text(text)
+print('Mac Pro candidate Calamares override applied; hardware install remains UNTESTED.')

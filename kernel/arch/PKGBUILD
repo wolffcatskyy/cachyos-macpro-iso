@@ -1,0 +1,332 @@
+# Maintainer: wolffcatskyy <153394885+wolffcatskyy@users.noreply.github.com>
+# linux-mac: Custom kernel for Mac Pro 6,1
+
+pkgbase=linux-macpro61
+pkgver=7.2.8
+pkgrel=0
+pkgdesc='Custom Linux kernel for Mac Pro 6,1 — CachyOS base, BORE scheduler, built-in drivers'
+install=linux-macpro61.install
+url='https://github.com/wolffcatskyy/linux-mac'
+arch=(x86_64)
+license=(GPL-2.0-only)
+makedepends=(
+    bc
+    cpio
+    gettext
+    libelf
+    pahole
+    perl
+    python
+    tar
+    xz
+    zstd
+)
+options=(
+    !debug
+    !strip
+)
+
+# Kernel source + our config
+# NOTE: .0 releases on kernel.org don't include .0 in the filename
+_major=${pkgver%%.*}
+_minor=${pkgver#*.}
+_minor=${_minor%%.*}
+_srcver=${_major}.${_minor}
+_srcname=linux-7.2.8
+source=(
+    "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.8.tar.xz"
+    # Stable tarball. Pin checksum before shipping a release.
+    "config"
+    "99-macpro.conf"
+    # Historical 7.0 patches; require porting before this candidate can build.
+    "0001-bore.patch"
+    "0002-bbr3.patch"
+    "0003-cachy.patch"
+    "0004-fixes.patch"
+    "0005-hdmi.patch"
+)
+
+sha256sums=(
+    '12e8d5a973d1ad7c5a5c69882e4022b131ed715db7003fdcd760ddf8c3e51941'
+    'SKIP'
+    'SKIP'
+    'SKIP'
+    'SKIP'
+    'SKIP'
+    'SKIP'
+    'SKIP'
+)
+# No PGP verification for rc tarballs
+
+export KBUILD_BUILD_HOST=macpro61
+export KBUILD_BUILD_USER=linux-mac
+export KCFLAGS="-march=ivybridge -O3 -pipe"
+export PATH="/usr/lib/ccache/bin:$PATH"
+
+_decompress_firmware() {
+    # Arch linux-firmware ships .bin.zst files but EXTRA_FIRMWARE needs .bin
+    # Decompress any needed firmware blobs for built-in embedding
+    echo "Decompressing firmware blobs for built-in embedding..."
+    local fw_dir="/lib/firmware"
+    local blobs=(
+        amdgpu/tahiti_ce.bin
+        amdgpu/tahiti_mc.bin
+        amdgpu/tahiti_me.bin
+        amdgpu/tahiti_pfp.bin
+        amdgpu/tahiti_rlc.bin
+        amdgpu/tahiti_smc.bin
+        amdgpu/tahiti_uvd.bin
+        amdgpu/vce_1_0_0.bin
+        amdgpu/pitcairn_ce.bin
+        amdgpu/pitcairn_mc.bin
+        amdgpu/pitcairn_me.bin
+        amdgpu/pitcairn_pfp.bin
+        amdgpu/pitcairn_rlc.bin
+        amdgpu/pitcairn_smc.bin
+        amdgpu/pitcairn_uvd.bin
+    )
+
+    local staging="$srcdir/firmware"
+    mkdir -p "$staging/amdgpu"
+
+    for blob in "${blobs[@]}"; do
+        if [[ -f "$fw_dir/$blob" ]]; then
+            cp "$fw_dir/$blob" "$staging/$blob"
+        elif [[ -f "$fw_dir/${blob}.zst" ]]; then
+            zstd -df "$(realpath "$fw_dir/${blob}.zst")" -o "$staging/$blob"
+        else
+            echo "WARNING: Firmware blob not found: $blob"
+        fi
+    done
+
+    echo "Firmware staged in $staging"
+}
+
+prepare() {
+    cd "$_srcname"
+
+    echo "Setting version..."
+    echo "-macpro61" > localversion
+
+    echo "Copying config..."
+    cp "$srcdir/config" .config
+
+    # Decompress firmware for embedding
+    _decompress_firmware
+
+    # Point EXTRA_FIRMWARE_DIR to our staged decompressed firmware
+    sed -i "s|^CONFIG_EXTRA_FIRMWARE_DIR=.*|CONFIG_EXTRA_FIRMWARE_DIR=\"$srcdir/firmware\"|" .config
+
+    # Apply patches if any exist (from source array)
+    local src
+    for src in "${source[@]}"; do
+        src="${src%%::*}"
+        src="${src##*/}"
+        src="${src%.zst}"
+        [[ $src = *.patch ]] || continue
+        echo "Applying patch $src..."
+        patch -Np1 --fuzz=0 < "$srcdir/$src" || { echo "Patch $src needs porting to 7.2.8" >&2; return 1; }
+    done
+
+
+    # Enable BORE scheduler (added by CachyOS patch)
+    echo "Enabling BORE scheduler..."
+    sed -i 's/^# CONFIG_SCHED_BORE is not set/CONFIG_SCHED_BORE=y/' .config
+    grep -q "CONFIG_SCHED_BORE=y" .config || echo "CONFIG_SCHED_BORE=y" >> .config
+
+    make olddefconfig
+
+    # Force critical drivers to built-in (=y) — olddefconfig may flip them.
+    echo "Enforcing Mac Pro 6,1 critical built-in drivers..."
+    local _critical_builtin=(
+        CONFIG_DRM_AMDGPU
+        CONFIG_TIGON3
+        CONFIG_USB4
+        CONFIG_SOUND
+        CONFIG_SND
+        CONFIG_SND_HDA
+        CONFIG_SND_HDA_INTEL
+        CONFIG_SND_HDA_CODEC_CIRRUS
+        CONFIG_SND_HDA_CODEC_HDMI
+        CONFIG_SATA_AHCI
+        CONFIG_BLK_DEV_NVME
+        CONFIG_SENSORS_APPLESMC
+        CONFIG_EFI_STUB
+        CONFIG_MODULES
+        CONFIG_USB_XHCI_HCD
+        CONFIG_USB_XHCI_PCI
+        CONFIG_KVM
+        CONFIG_KVM_INTEL
+        CONFIG_OVERLAY_FS
+        CONFIG_BROADCOM_PHY
+        CONFIG_TCP_CONG_BBR
+    )
+    for opt in "${_critical_builtin[@]}"; do
+        if grep -q "^${opt}=m" .config; then
+            echo "  Fixing ${opt}: m -> y"
+            sed -i "s/^${opt}=m/${opt}=y/" .config
+        elif grep -q "^# ${opt} is not set" .config; then
+            echo "  Fixing ${opt}: not set -> y"
+            sed -i "s/^# ${opt} is not set/${opt}=y/" .config
+        elif ! grep -q "^${opt}=y" .config; then
+            echo "  Adding ${opt}=y"
+            echo "${opt}=y" >> .config
+        fi
+    done
+
+    # Re-resolve dependencies after forcing options
+    make olddefconfig
+
+    # Re-force critical drivers after olddefconfig (it may reset some)
+    echo "Re-enforcing critical built-in drivers after olddefconfig..."
+    for opt in "${_critical_builtin[@]}"; do
+        if grep -q "^${opt}=m" .config; then
+            echo "  Re-fixing ${opt}: m -> y"
+            sed -i "s/^${opt}=m/${opt}=y/" .config
+        fi
+    done
+
+
+    # Verify critical options are set
+    echo "Verifying config..."
+    grep -q "CONFIG_DRM_AMDGPU=y" .config || { echo "FATAL: AMDGPU not built-in!"; return 1; }
+    grep -q "CONFIG_DRM_AMDGPU_SI=y" .config || { echo "FATAL: Southern Islands support not enabled!"; return 1; }
+    grep -q "CONFIG_SENSORS_APPLESMC=y" .config || { echo "FATAL: Apple SMC not built-in!"; return 1; }
+    grep -q "CONFIG_EFI_STUB=y" .config || { echo "FATAL: EFI stub not enabled!"; return 1; }
+    grep -q "CONFIG_MODULES=y" .config || { echo "FATAL: Modules not enabled!"; return 1; }
+    grep -q "CONFIG_TIGON3=y" .config || { echo "FATAL: Broadcom NIC not built-in!"; return 1; }
+    grep -q "CONFIG_SATA_AHCI=y" .config || { echo "FATAL: AHCI not built-in!"; return 1; }
+    grep -q "CONFIG_USB4=y" .config || echo "WARNING: USB4 (Thunderbolt) not built-in!"
+    grep -q "CONFIG_SND_HDA_INTEL=y" .config || echo "WARNING: HDA Intel not built-in!"
+    grep -q "CONFIG_SND_HDA_CODEC_CIRRUS=y" .config || echo "WARNING: Cirrus codec not built-in!"
+    grep -q "CONFIG_KVM=y" .config || echo "WARNING: KVM not enabled!"
+    grep -q "CONFIG_BLK_DEV_NVME=y" .config || echo "WARNING: NVMe not built-in!"
+    grep -q "CONFIG_SCHED_BORE=y" .config || echo "WARNING: BORE scheduler not enabled!"
+    grep -q "CONFIG_TCP_CONG_BBR=y" .config || echo "WARNING: BBR not built-in!"
+    grep -q "CONFIG_BROADCOM_PHY=y" .config || { echo "FATAL: Broadcom PHY not built-in!"; return 1; }
+
+    make -s kernelrelease > version
+    echo "Prepared linux version: $(<version)"
+}
+
+build() {
+    cd "$_srcname"
+    make CC=clang LLVM=1 -j$(nproc) all
+}
+
+_package() {
+    pkgdesc="$pkgdesc - kernel and modules"
+    depends=(
+        coreutils
+        kmod
+    )
+    # No mkinitcpio dependency — everything is built-in
+    # No initramfs needed
+
+    cd "$_srcname"
+    local modulesdir="$pkgdir/usr/lib/modules/$(<version)"
+
+    echo "Installing boot image..."
+    install -Dm644 "$(make -s image_name)" "$modulesdir/vmlinuz"
+
+    # Used by mkinitcpio if someone insists on running it (they shouldn't need to)
+    echo "$pkgbase" | install -Dm644 /dev/stdin "$modulesdir/pkgbase"
+
+    echo "Installing modules..."
+    DEPMOD=/doesnt/exist make INSTALL_MOD_PATH="$pkgdir/usr" INSTALL_MOD_STRIP=1 \
+        modules_install
+
+    # Remove build link (set in -headers package)
+    rm -f "$modulesdir/build"
+
+    echo "Installing sysctl config..."
+    install -Dm644 "$srcdir/99-macpro.conf" "$pkgdir/etc/sysctl.d/99-macpro.conf"
+
+    # Skip boot entry installation — user manages their own boot entry
+    # See README for systemd-boot setup instructions
+    echo "NOTE: Ensure /boot/loader/entries/linux-macpro61.conf exists with correct PARTUUID"
+}
+
+_package-headers() {
+    pkgdesc="$pkgdesc - headers and build files"
+    depends=("$pkgbase")
+
+    cd "$_srcname"
+    local builddir="$pkgdir/usr/lib/modules/$(<version)/build"
+
+    echo "Installing build files..."
+    install -Dt "$builddir" -m644 .config Makefile Module.symvers System.map \
+        localversion version vmlinux
+    install -Dt "$builddir/kernel" -m644 kernel/Makefile
+    install -Dt "$builddir/arch/x86" -m644 arch/x86/Makefile
+    cp -t "$builddir" -a scripts
+
+    echo "Installing objtool..."
+    install -Dt "$builddir/tools/objtool" -m755 tools/objtool/objtool
+
+    echo "Installing headers..."
+    cp -t "$builddir" -a include
+    cp -t "$builddir/arch/x86" -a arch/x86/include
+    install -Dt "$builddir/arch/x86/kernel" -m644 arch/x86/kernel/asm-offsets.s
+    install -Dt "$builddir/drivers/md" -m644 drivers/md/*.h
+    install -Dt "$builddir/net/mac80211" -m644 net/mac80211/*.h
+    install -Dt "$builddir/drivers/media/i2c" -m644 drivers/media/i2c/msp3400-driver.h
+    install -Dt "$builddir/drivers/media/usb/dvb-usb" -m644 drivers/media/usb/dvb-usb/*.h
+    install -Dt "$builddir/drivers/media/dvb-frontends" -m644 drivers/media/dvb-frontends/*.h
+    install -Dt "$builddir/drivers/media/tuners" -m644 drivers/media/tuners/*.h
+    install -Dt "$builddir/drivers/iio/common/hid-sensors" -m644 \
+        drivers/iio/common/hid-sensors/*.h
+
+    echo "Installing KConfig files..."
+    find . -name 'Kconfig*' -exec install -Dm644 {} "$builddir/{}" \;
+
+    echo "Removing unneeded architectures..."
+    local arch
+    for arch in "$builddir"/arch/*/; do
+        [[ $arch = */x86/ ]] && continue
+        echo "  Removing $(basename "$arch")"
+        rm -r "$arch"
+    done
+
+    echo "Removing documentation..."
+    rm -r "$builddir/Documentation"
+
+    echo "Removing broken symlinks..."
+    find -L "$builddir" -type l -printf 'Removing %P\n' -delete
+
+    echo "Removing loose objects..."
+    find "$builddir" -type f -name '*.o' -printf 'Removing %P\n' -delete
+
+    echo "Stripping build tools..."
+    local file
+    while read -rd '' file; do
+        case "$(file -Sib "$file")" in
+            application/x-sharedlib\;*)
+                strip -v $STRIP_SHARED "$file" ;;
+            application/x-archive\;*)
+                strip -v $STRIP_STATIC "$file" ;;
+            application/x-executable\;*)
+                strip -v $STRIP_BINARIES "$file" ;;
+            application/x-pie-executable\;*)
+                strip -v $STRIP_BINARIES "$file" ;;
+        esac
+    done < <(find "$builddir" -type f -perm -u+x ! -name vmlinux -print0)
+
+    echo "Stripping vmlinux..."
+    strip -v $STRIP_STATIC "$builddir/vmlinux"
+
+    echo "Adding symlink..."
+    mkdir -p "$pkgdir/usr/src"
+    ln -sr "$builddir" "$pkgdir/usr/src/$pkgbase"
+}
+
+pkgname=(
+    "$pkgbase"
+    "$pkgbase-headers"
+)
+for _p in "${pkgname[@]}"; do
+    eval "package_$_p() {
+        $(declare -f "_package${_p#$pkgbase}")
+        _package${_p#$pkgbase}
+    }"
+done

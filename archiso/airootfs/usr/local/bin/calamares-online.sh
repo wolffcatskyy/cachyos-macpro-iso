@@ -44,6 +44,9 @@ main() {
 ########## System: $SYSTEM
 EOF
 
+    echo "UNTESTED Mac Pro installer: install blocked pending verified kernel boot, fan and package audit." >&2
+    return 1
+    sudo /usr/local/sbin/macpro-calamares-override || return 1
     sudo cp "/usr/share/calamares/settings_${mode}.conf" /etc/calamares/settings.conf
     exec pkexec-wrapper calamares -D6 >> $log
 }

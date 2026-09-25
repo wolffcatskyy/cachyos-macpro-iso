@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# MacPro6,1 single fan: hold the firmware-reported maximum, do not guess RPM.
+set -euo pipefail
+[[ $(cat /sys/class/dmi/id/product_name) == MacPro6,1 ]] || exit 0
+modprobe applesmc || true
+fan_dir=/sys/devices/platform/applesmc.768
+for i in {1..30}; do
+  [[ -r "$fan_dir/fan1_max" && -w "$fan_dir/fan1_output" && -w "$fan_dir/fan1_manual" && -w "$fan_dir/fan1_min" ]] && break
+  sleep 1
+done
+[[ -r "$fan_dir/fan1_max" && -w "$fan_dir/fan1_output" && -w "$fan_dir/fan1_manual" && -w "$fan_dir/fan1_min" ]] || { echo 'applesmc fan controls unavailable' >&2; exit 1; }
+while :; do
+  max=$(cat "$fan_dir/fan1_max")
+  [[ $max =~ ^[0-9]+$ && $max -gt 0 ]] || { echo 'Invalid fan maximum' >&2; exit 1; }
+  printf '%s\n' 1 > "$fan_dir/fan1_manual"
+  printf '%s\n' "$max" > "$fan_dir/fan1_min"
+  printf '%s\n' "$max" > "$fan_dir/fan1_output"
+  [[ $(cat "$fan_dir/fan1_manual") == 1 ]] || { echo 'Manual mode did not take' >&2; exit 1; }
+  sleep 2
+done
